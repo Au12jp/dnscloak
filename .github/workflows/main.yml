@@ -20,60 +20,70 @@ jobs:
         with:
           node-version: "16"
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-
-      - name: Install dependencies (brew)
+      - name: Install brew dependencies
         run: |
           brew update
           brew install jq
 
-      - name: Detect Cordova directory
-        id: cordova_dir
+      - name: Find Cordova project root
         run: |
-          echo "Searching Cordova project..."
-          DIR=$(find . -maxdepth 3 -name config.xml -print -quit | xargs dirname)
-          if [ -z "$DIR" ]; then
-            echo "Cordova config.xml not found!"
+          echo "Searching Cordova root..."
+          CORDOVA_DIR=$(find . -name config.xml -maxdepth 5 -print -quit | xargs dirname)
+
+          if [ -z "$CORDOVA_DIR" ]; then
+            echo "ERROR: config.xml not found"
+            echo "Listing repository root:"
+            ls -la
             exit 1
           fi
-          echo "CORDOVA_DIR=$DIR" >> $GITHUB_ENV
-          echo "Found Cordova project at: $DIR"
+
+          echo "CORDOVA_DIR=$CORDOVA_DIR" >> $GITHUB_ENV
+          echo "Cordova root found: $CORDOVA_DIR"
+
+          echo "Contents of Cordova root:"
+          ls -la "$CORDOVA_DIR"
+
+      - name: Verify Cordova project
+        run: |
+          cd "$CORDOVA_DIR"
+          if [ ! -f config.xml ]; then
+            echo "ERROR: config.xml missing"
+            exit 1
+          fi
+          echo "Cordova project verified!"
 
       - name: Install npm dependencies (force sass)
         run: |
           cd "$CORDOVA_DIR"
-
-          # node-sass is too old and fails on macOS arm64
           npm uninstall node-sass || true
           npm install sass --save-dev || true
-
           npm install --no-audit --no-fund
 
       - name: Add iOS platform
         run: |
           cd "$CORDOVA_DIR"
-          npx cordova platform add ios || true
+          npx cordova platform add ios
 
       - name: Build Cordova iOS
         run: |
           cd "$CORDOVA_DIR"
-          npx cordova build ios --release --device -- --codeSignIdentity="" --developmentTeam=""
+          npx cordova build ios --release --device
 
-      - name: Archive iOS project (unsigned)
+      - name: Archive Xcode project (unsigned)
         run: |
           cd "$CORDOVA_DIR/platforms/ios"
 
+          SCHEME=$(xcodebuild -list -json | jq -r '.project.schemes[0] // .workspace.schemes[0]')
+          echo "Using scheme: $SCHEME"
+
           xcodebuild -workspace *.xcworkspace \
-                     -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0]')" \
+                     -scheme "$SCHEME" \
                      -sdk iphoneos \
                      -configuration Release \
                      -archivePath build/App.xcarchive \
                      archive CODE_SIGNING_ALLOWED=NO
 
-      - name: Export IPA (unsigned)
+      - name: Export unsigned IPA
         run: |
           cd "$CORDOVA_DIR/platforms/ios"
 
@@ -86,8 +96,6 @@ jobs:
             <string>ad-hoc</string>
             <key>signingStyle</key>
             <string>manual</string>
-            <key>stripSwiftSymbols</key>
-            <true/>
             <key>compileBitcode</key>
             <false/>
           </dict>
