@@ -19,14 +19,20 @@ jobs:
         with:
           node-version: "16"
 
+      - name: Remove deprecated node-sass (fix python2 issue)
+        run: |
+          node -e "
+            const fs=require('fs');
+            const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+            if(p.dependencies && p.dependencies['node-sass']) delete p.dependencies['node-sass'];
+            if(p.devDependencies && p.devDependencies['node-sass']) delete p.devDependencies['node-sass'];
+            fs.writeFileSync('package.json', JSON.stringify(p,null,2));
+          "
+
       - name: Install npm dependencies
         run: |
-          npm install
-
-      - name: Force node-sass upgrade (fix for arm64)
-        run: |
-          npm uninstall node-sass || true
-          npm install node-sass@7 --save-dev
+          npm install --no-audit --no-fund
+          npm install sass --save-dev
 
       - name: Build Cordova project
         run: |
