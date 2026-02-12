@@ -14,11 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "16"
 
+      # Go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      # node-sass 제거
       - name: Remove deprecated node-sass (fix python2 issue)
         run: |
           node -e "
@@ -29,22 +42,27 @@ jobs:
             fs.writeFileSync('package.json', JSON.stringify(p,null,2));
           "
 
+      # Cordova iOS 다시 생성
+      - name: Clean Cordova platforms/plugins
+        run: |
+          rm -rf platforms plugins node_modules
+
       - name: Install npm dependencies
         run: |
           npm install --no-audit --no-fund
           npm install sass --save-dev
 
-      - name: Build Cordova project
+      - name: Add iOS platform fresh
         run: |
-          npm run build
+          npx cordova platform add ios
 
-      - name: Add iOS platform (if missing)
-        run: |
-          npx cordova platform add ios || true
-
-      - name: Prepare iOS project
+      - name: Prepare Cordova
         run: |
           npx cordova prepare ios
+
+      - name: Build project (includes Go framework build)
+        run: |
+          npm run build
 
       - name: Create exportOptions-unsigned.plist
         run: |
@@ -69,7 +87,7 @@ jobs:
         run: |
           cd platforms/ios
           xcodebuild -workspace *.xcworkspace \
-                     -scheme "$(xcodebuild -list -workspace *.xcworkspace | grep -A 50 Schemes: | tail -n +2 | head -n 1 | xargs)" \
+                     -scheme DNSCryptApp \
                      -sdk iphoneos \
                      -configuration Release \
                      -archivePath build/App.xcarchive \
