@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -24,7 +24,7 @@ jobs:
           cp -r obj/DNSCloak.app Payload/
           zip -r DNSCloak.tipa Payload
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: DNSCloak.tipa
           path: DNSCloak.tipa
