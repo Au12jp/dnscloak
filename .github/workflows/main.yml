@@ -2,10 +2,6 @@ name: Build Unsigned IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
 
 jobs:
   build-ios:
@@ -14,13 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Node
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "16"
 
-      # Go
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -31,41 +25,47 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
 
-      # node-sass 제거
-      - name: Remove deprecated node-sass (fix python2 issue)
+      - name: Find Cordova project directory
+        id: find_cordova
         run: |
-          node -e "
-            const fs=require('fs');
-            const p=JSON.parse(fs.readFileSync('package.json','utf8'));
-            if(p.dependencies && p.dependencies['node-sass']) delete p.dependencies['node-sass'];
-            if(p.devDependencies && p.devDependencies['node-sass']) delete p.devDependencies['node-sass'];
-            fs.writeFileSync('package.json', JSON.stringify(p,null,2));
-          "
+          CORDOVA_DIR=$(dirname "$(find . -name config.xml | head -n 1)")
+          echo "CORDOVA_DIR=$CORDOVA_DIR"
+          echo "CORDOVA_DIR=$CORDOVA_DIR" >> $GITHUB_ENV
 
-      # Cordova iOS 다시 생성
-      - name: Clean Cordova platforms/plugins
+      - name: Debug Cordova project
         run: |
-          rm -rf platforms plugins node_modules
+          echo "Cordova project is at: $CORDOVA_DIR"
+          ls -la "$CORDOVA_DIR"
 
       - name: Install npm dependencies
         run: |
+          cd "$CORDOVA_DIR"
           npm install --no-audit --no-fund
           npm install sass --save-dev
 
-      - name: Add iOS platform fresh
+      - name: Clean platforms/plugins
         run: |
+          cd "$CORDOVA_DIR"
+          rm -rf platforms plugins
+
+      - name: Add iOS platform
+        run: |
+          cd "$CORDOVA_DIR"
           npx cordova platform add ios
 
-      - name: Prepare Cordova
+      - name: Prepare iOS
         run: |
+          cd "$CORDOVA_DIR"
           npx cordova prepare ios
 
-      - name: Build project (includes Go framework build)
+      - name: Build project
         run: |
+          cd "$CORDOVA_DIR"
           npm run build
 
       - name: Create exportOptions-unsigned.plist
         run: |
+          cd "$CORDOVA_DIR"
           cat > exportOptions-unsigned.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -85,7 +85,7 @@ jobs:
 
       - name: Archive iOS project (unsigned)
         run: |
-          cd platforms/ios
+          cd "$CORDOVA_DIR/platforms/ios"
           xcodebuild -workspace *.xcworkspace \
                      -scheme DNSCryptApp \
                      -sdk iphoneos \
@@ -95,7 +95,7 @@ jobs:
 
       - name: Export IPA without signing
         run: |
-          cd platforms/ios
+          cd "$CORDOVA_DIR/platforms/ios"
           xcodebuild -exportArchive \
                      -archivePath build/App.xcarchive \
                      -exportPath build/ipa \
@@ -105,4 +105,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dnscloak-unsigned-ipa
-          path: platforms/ios/build/ipa/*.ipa
+          path: "**/platforms/ios/build/ipa/*.ipa"
