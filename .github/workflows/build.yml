@@ -14,6 +14,21 @@ jobs:
           brew install ldid
           git clone --recursive https://github.com/theos/theos.git ~/theos
 
+      - name: Debug (Check THEOS + Makefile location)
+        run: |
+          echo "HOME=$HOME"
+          echo "THEOS env=$THEOS"
+          echo "==== HOME LIST ===="
+          ls -la $HOME
+          echo "==== THEOS LIST ===="
+          ls -la $HOME/theos || echo "no theos folder"
+          echo "==== THEOS MAKEFILES ===="
+          ls -la $HOME/theos/makefiles || echo "no theos makefiles folder"
+          echo "==== FIND MAKEFILE IN REPO ===="
+          pwd
+          ls -la
+          find . -name Makefile
+
       - name: Build
         run: |
           make THEOS=~/theos
