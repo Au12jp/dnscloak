@@ -2,13 +2,18 @@ name: Build Unsigned IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
   build-ios:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -20,89 +25,84 @@ jobs:
         with:
           go-version: "1.23"
 
-      - name: Install gomobile
+      - name: Install dependencies (brew)
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          gomobile init
+          brew update
+          brew install jq
 
-      - name: Find Cordova project directory
-        id: find_cordova
+      - name: Detect Cordova directory
+        id: cordova_dir
         run: |
-          CORDOVA_DIR=$(dirname "$(find . -name config.xml | head -n 1)")
-          echo "CORDOVA_DIR=$CORDOVA_DIR"
-          echo "CORDOVA_DIR=$CORDOVA_DIR" >> $GITHUB_ENV
+          echo "Searching Cordova project..."
+          DIR=$(find . -maxdepth 3 -name config.xml -print -quit | xargs dirname)
+          if [ -z "$DIR" ]; then
+            echo "Cordova config.xml not found!"
+            exit 1
+          fi
+          echo "CORDOVA_DIR=$DIR" >> $GITHUB_ENV
+          echo "Found Cordova project at: $DIR"
 
-      - name: Debug Cordova project
-        run: |
-          echo "Cordova project is at: $CORDOVA_DIR"
-          ls -la "$CORDOVA_DIR"
-
-      - name: Install npm dependencies
+      - name: Install npm dependencies (force sass)
         run: |
           cd "$CORDOVA_DIR"
+
+          # node-sass is too old and fails on macOS arm64
+          npm uninstall node-sass || true
+          npm install sass --save-dev || true
+
           npm install --no-audit --no-fund
-          npm install sass --save-dev
-
-      - name: Clean platforms/plugins
-        run: |
-          cd "$CORDOVA_DIR"
-          rm -rf platforms plugins
 
       - name: Add iOS platform
         run: |
           cd "$CORDOVA_DIR"
-          npx cordova platform add ios
+          npx cordova platform add ios || true
 
-      - name: Prepare iOS
+      - name: Build Cordova iOS
         run: |
           cd "$CORDOVA_DIR"
-          npx cordova prepare ios
-
-      - name: Build project
-        run: |
-          cd "$CORDOVA_DIR"
-          npm run build
-
-      - name: Create exportOptions-unsigned.plist
-        run: |
-          cd "$CORDOVA_DIR"
-          cat > exportOptions-unsigned.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>development</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>compileBitcode</key>
-            <false/>
-            <key>destination</key>
-            <string>export</string>
-          </dict>
-          </plist>
-          EOF
+          npx cordova build ios --release --device -- --codeSignIdentity="" --developmentTeam=""
 
       - name: Archive iOS project (unsigned)
         run: |
           cd "$CORDOVA_DIR/platforms/ios"
+
           xcodebuild -workspace *.xcworkspace \
-                     -scheme DNSCryptApp \
+                     -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0]')" \
                      -sdk iphoneos \
                      -configuration Release \
                      -archivePath build/App.xcarchive \
                      archive CODE_SIGNING_ALLOWED=NO
 
-      - name: Export IPA without signing
+      - name: Export IPA (unsigned)
         run: |
           cd "$CORDOVA_DIR/platforms/ios"
+
+          cat > exportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
           xcodebuild -exportArchive \
                      -archivePath build/App.xcarchive \
                      -exportPath build/ipa \
-                     -exportOptionsPlist ../../exportOptions-unsigned.plist
+                     -exportOptionsPlist exportOptions.plist \
+                     CODE_SIGNING_ALLOWED=NO
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: dnscloak-unsigned-ipa
-          path: "**/platforms/ios/build/ipa/*.ipa"
+          path: |
+            **/*.ipa
