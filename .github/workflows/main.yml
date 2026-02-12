@@ -15,10 +15,10 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js (legacy)
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "14"
 
       - name: Install npm dependencies
         run: |
@@ -35,33 +35,6 @@ jobs:
       - name: Prepare iOS project
         run: |
           npx cordova prepare ios
-
-      - name: Debug iOS files
-        run: |
-          ls -la platforms/ios
-          find platforms/ios -maxdepth 2 -name "*.xcworkspace"
-          find platforms/ios -maxdepth 2 -name "*.xcodeproj"
-
-      - name: Create exportOptions-unsigned.plist
-        run: |
-          cat > exportOptions-unsigned.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>development</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>compileBitcode</key>
-            <false/>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>destination</key>
-            <string>export</string>
-          </dict>
-          </plist>
-          EOF
 
       - name: Archive iOS project (unsigned)
         run: |
